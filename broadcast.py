@@ -156,7 +156,11 @@ async def run_account(db: Database, account: dict, groups: list, stagger_delay: 
 
     client = TelegramClient(session_name, API_ID, API_HASH, proxy=proxy)
     try:
-        await client.start(phone=phone)
+        await client.connect()
+        if not await client.is_user_authorized():
+            logger.error(f"[{phone}] ❌ Session 未授权，请先运行 login.py 重新登录")
+            db.update_account_status(account["id"], "login_failed")
+            return
         logger.info(f"[{phone}] ✅ 登录成功")
     except Exception as e:
         logger.error(f"[{phone}] ❌ 登录失败: {e}")
