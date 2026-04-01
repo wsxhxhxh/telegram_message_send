@@ -22,7 +22,7 @@ from db import Database
 # ============================================================
 # 配置
 # ============================================================
-API_ID   = os.getenv("API_ID")
+API_ID   = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 
 MESSAGES = [
@@ -118,6 +118,7 @@ async def join_group(client, group_link: str):
 # 发消息
 # ============================================================
 async def send_message(client, group_link: str, message: str):
+    username = ''
     try:
         username = group_link.replace("https://t.me/", "").replace("@", "").strip("/")
         await client.send_message(username, message)
@@ -126,8 +127,9 @@ async def send_message(client, group_link: str, message: str):
         logger.warning(f"发消息限流，等待 {e.seconds}s ...")
         await asyncio.sleep(e.seconds)
         try:
-            await client.send_message(username, message)
-            return True, "限流后重试成功"
+            if username:
+                await client.send_message(username, message)
+                return True, "限流后重试成功"
         except Exception as e2:
             return False, f"重试失败: {e2}"
     except PeerFloodError:
@@ -218,11 +220,20 @@ async def main():
 
     logger.info(f"共 {len(accounts)} 个账号，{len(groups)} 个目标群")
 
+    def chunk(lst, n):
+        size = max(1, len(lst) // n)
+        for i in range(0, len(lst), size):
+            yield lst[i:i + size]
+
+    group_chunks = list(chunk(groups, len(accounts)))
+
     tasks   = []
-    stagger = 0.0
-    for account in accounts:
-        tasks.append(run_account(db, account, groups, stagger))
-        stagger += random.uniform(ACCOUNT_STAGGER_MIN, ACCOUNT_STAGGER_MAX)
+    for i, account in enumerate(accounts):
+        assigned_groups = group_chunks[i] if i < len(group_chunks) else []
+        if not assigned_groups: continue
+
+        delay = i * random.randint(ACCOUNT_STAGGER_MIN, ACCOUNT_STAGGER_MAX)
+        tasks.append(run_account(db, account, assigned_groups, delay))
 
     await asyncio.gather(*tasks)
 
