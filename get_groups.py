@@ -25,9 +25,9 @@ async def get_groups_for_account(account):
         if isinstance(entity, (Channel, Chat)):
             try:
                 link = f"https://t.me/{entity.username}" if entity.username else f"(私有群，id={entity.id})"
+                groups.append((dialog.name, link))
             except:
-                link = f"(私有群，id={entity.id})"
-            groups.append((dialog.name, link))
+                pass
 
     await client.disconnect()
     return groups
