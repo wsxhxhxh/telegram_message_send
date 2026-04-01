@@ -197,6 +197,18 @@ class Database:
         ).fetchall()
         return {row["group_id"] for row in rows}
 
+    def get_last_sender_per_group(self) -> dict:
+        """返回 {group_id: account_id}，每个群最后一次发送成功的账号"""
+        rows = self.conn.execute("""
+                                 SELECT group_id, account_id
+                                 FROM send_logs
+                                 WHERE stage = 'send'
+                                   AND success = 1
+                                 GROUP BY group_id
+                                 HAVING MAX(created_at)
+                                 """).fetchall()
+        return {row["group_id"]: row["account_id"] for row in rows}
+
     def close(self):
         self.conn.close()
 
