@@ -24,10 +24,15 @@ async def get_groups_for_account(account):
         entity = dialog.entity
         if isinstance(entity, (Channel, Chat)):
             try:
-                link = f"https://t.me/{entity.username}" if entity.username else f"(私有群，id={entity.id})"
-                groups.append((dialog.name, link))
-            except:
-                pass
+                username = entity.username
+            except AttributeError:
+                username = None
+
+            if not username:  # 跳过私有群
+                continue
+
+            link = f"https://t.me/{username}"
+            groups.append((dialog.name, link))
 
     await client.disconnect()
     return groups
