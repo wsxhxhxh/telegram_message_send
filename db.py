@@ -185,6 +185,18 @@ class Database:
         """).fetchone()
         return dict(row) if row else {"join_ok": 0, "send_ok": 0, "failed": 0}
 
+    def get_sent_group_ids(self, account_id: int) -> set:
+        """获取某账号历史上发送成功的群组 id 集合"""
+        rows = self.conn.execute(
+            """SELECT DISTINCT group_id
+               FROM send_logs
+               WHERE account_id = ?
+                 AND stage = 'send'
+                 AND success = 1""",
+            (account_id,)
+        ).fetchall()
+        return {row["group_id"] for row in rows}
+
     def close(self):
         self.conn.close()
 

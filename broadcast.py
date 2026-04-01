@@ -213,33 +213,46 @@ async def main():
 
     db       = Database()
     accounts = db.get_active_accounts()
-    groups   = db.get_active_groups()
+    all_groups = db.get_active_groups()
 
     if not accounts:
-        logger.error("没有可用账号，请先用 manage.py add-account 添加")
+        logger.error("没有可用账号")
         return
-    if not groups:
-        logger.error("没有目标群，请先用 manage.py add-group 添加")
+    if not all_groups:
+        logger.error("没有目标群")
         return
 
-    logger.info(f"共 {len(accounts)} 个账号，{len(groups)} 个目标群")
+    logger.info(f"共 {len(accounts)} 个账号，{len(all_groups)} 个目标群")
 
-    def chunk(lst, n):
-        size = max(1, len(lst) // n)
-        for i in range(0, len(lst), size):
-            yield lst[i:i + size]
-
-    group_chunks = list(chunk(groups, len(accounts)))
-
-    tasks   = []
+    tasks = []
     for i, account in enumerate(accounts):
-        assigned_groups = group_chunks[i] if i < len(group_chunks) else []
-        if not assigned_groups: continue
+        # 查出该账号已发送过的群组
+        sent_ids = db.get_sent_group_ids(account["id"])
+
+        # 过滤掉已发送的群组
+        available = [g for g in all_groups if g["id"] not in sent_ids]
+
+        if not available:
+            logger.info(f"[{account['phone']}] 所有群组均已发送过，跳过")
+            continue
+
+        # 随机打乱，再平均分配
+        random.shuffle(available)
+        chunk_size = max(1, len(available) // len(accounts))
+        assigned = available[i * chunk_size: (i + 1) * chunk_size]
+
+        # 最后一个账号接收剩余群组，避免遗漏
+        if i == len(accounts) - 1:
+            assigned = available[i * chunk_size:]
+
+        if not assigned:
+            continue
 
         delay = i * random.randint(ACCOUNT_STAGGER_MIN, ACCOUNT_STAGGER_MAX)
-        tasks.append(run_account(db, account, assigned_groups, delay))
+        tasks.append(run_account(db, account, assigned, delay))
 
-    await asyncio.gather(*tasks)
+    if tasks:
+        await asyncio.gather(*tasks)
 
     logger.info("\n" + "=" * 50)
     s = db.get_summary()
