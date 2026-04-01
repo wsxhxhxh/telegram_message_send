@@ -211,53 +211,46 @@ async def run_account(db: Database, account: dict, groups: list, stagger_delay: 
 async def main():
     os.makedirs(SESSION_DIR, exist_ok=True)
 
-    db       = Database()
+    db = Database()
     accounts = db.get_active_accounts()
-    all_groups = db.get_active_groups()
+    groups = db.get_active_groups()
+    last_sender = db.get_last_sender_per_group()  # 新增
 
-    if not accounts:
-        logger.error("没有可用账号")
-        return
-    if not all_groups:
-        logger.error("没有目标群")
+    if not accounts or not groups:
+        ...
         return
 
-    logger.info(f"共 {len(accounts)} 个账号，{len(all_groups)} 个目标群")
+    # 给每个群分配账号，排除上次发送者
+    account_ids = [a["id"] for a in accounts]
+
+    # group -> 可用账号列表
+    group_assignments = {}  # {account_id: [groups]}
+    for acc in accounts:
+        group_assignments[acc["id"]] = []
+
+    for group in groups:
+        gid = group["id"]
+        last_acc = last_sender.get(gid)  # 上次发这个群的账号id
+
+        # 可用账号 = 排除上次发送者
+        available = [a for a in accounts if a["id"] != last_acc]
+        if not available:
+            available = accounts  # 只有一个账号时没得选，还是用它
+
+        # 选可用账号里当前分配群最少的那个（均衡分配）
+        chosen = min(available, key=lambda a: len(group_assignments[a["id"]]))
+        group_assignments[chosen["id"]].append(group)
 
     tasks = []
     for i, account in enumerate(accounts):
-        # 查出该账号已发送过的群组
-        sent_ids = db.get_sent_group_ids(account["id"])
-
-        # 过滤掉已发送的群组
-        available = [g for g in all_groups if g["id"] not in sent_ids]
-
-        if not available:
-            logger.info(f"[{account['phone']}] 所有群组均已发送过，跳过")
-            continue
-
-        # 随机打乱，再平均分配
-        random.shuffle(available)
-        chunk_size = max(1, len(available) // len(accounts))
-        assigned = available[i * chunk_size: (i + 1) * chunk_size]
-
-        # 最后一个账号接收剩余群组，避免遗漏
-        if i == len(accounts) - 1:
-            assigned = available[i * chunk_size:]
-
+        assigned = group_assignments[account["id"]]
         if not assigned:
             continue
-
         delay = i * random.randint(ACCOUNT_STAGGER_MIN, ACCOUNT_STAGGER_MAX)
         tasks.append(run_account(db, account, assigned, delay))
 
-    if tasks:
-        await asyncio.gather(*tasks)
-
-    logger.info("\n" + "=" * 50)
-    s = db.get_summary()
-    logger.info(f"📊 加群成功: {s['join_ok']} | 发送成功: {s['send_ok']} | 失败: {s['failed']}")
-    db.close()
+    await asyncio.gather(*tasks)
+    ...
 
 
 if __name__ == "__main__":
